@@ -23,19 +23,44 @@ var p0 = fetch("".concat(resource_url_prefix, "/stats"), {
         'Authorization': "Basic ".concat(api_key_b64_encoded)
     }
 }).then(function (resp) { return resp.json(); }).then(function (json) {
-    var max_hrs = NaN;
-    for (var i = 0; i < 3; i++) {
-        var lang_json = json['data']['languages'][i];
-        if (!i) {
-            max_hrs = Number(lang_json['decimal']);
-        }
-        max_lang_name_len = Math.max(max_lang_name_len, lang_json['name'].length);
-        top_3.push({
-            name: lang_json['name'],
-            progress_bar_len: Math.floor(Number(lang_json['decimal']) / max_hrs * 34),
-            hrs: lang_json['text']
+    var retries = 3;
+    function try_stats(n) {
+        return new Promise(function (resolve, reject) {
+            if (json['data']['is_up_to_date']) {
+                resolve(json);
+            } else if (n > 0) {
+                console.log("Stats data stale, retrying... (".concat(n, " left)"));
+                setTimeout(function () {
+                    fetch("".concat(resource_url_prefix, "/stats"), {
+                        headers: {
+                            'Authorization': "Basic ".concat(api_key_b64_encoded)
+                        }
+                    }).then(function (resp) { return resp.json(); }).then(function (j) {
+                        json = j;
+                        try_stats(n - 1).then(resolve);
+                    });
+                }, 5000);
+            } else {
+                console.warn("Stats data still stale after retries, using cached data.");
+                resolve(json);
+            }
         });
     }
+    return try_stats(retries).then(function () {
+        var max_hrs = NaN;
+        for (var i = 0; i < 3; i++) {
+            var lang_json = json['data']['languages'][i];
+            if (!i) {
+                max_hrs = Number(lang_json['decimal']);
+            }
+            max_lang_name_len = Math.max(max_lang_name_len, lang_json['name'].length);
+            top_3.push({
+                name: lang_json['name'],
+                progress_bar_len: Math.floor(Number(lang_json['decimal']) / max_hrs * 34),
+                hrs: lang_json['text']
+            });
+        }
+    });
 });
 // total coding time over last 7 days
 var params = new URLSearchParams();
@@ -54,6 +79,31 @@ var p2 = fetch("".concat(resource_url_prefix, "/all_time_since_today"), {
     },
 }).then(function (resp) { return resp.json(); }).then(function (json) {
     time_total = json['data']['text'];
+}).then(function () {
+    var retries = 3;
+    function try_all_time(n) {
+        return new Promise(function (resolve, reject) {
+            if (time_total) {
+                resolve();
+            } else if (n > 0) {
+                console.log("All time data empty, retrying... (".concat(n, " left)"));
+                setTimeout(function () {
+                    fetch("".concat(resource_url_prefix, "/all_time_since_today"), {
+                        headers: {
+                            'Authorization': "Basic ".concat(api_key_b64_encoded)
+                        }
+                    }).then(function (resp) { return resp.json(); }).then(function (json) {
+                        time_total = json['data']['text'];
+                        try_all_time(n - 1).then(resolve);
+                    });
+                }, 5000);
+            } else {
+                console.warn("All time data still empty after retries.");
+                resolve();
+            }
+        });
+    }
+    return try_all_time(retries);
 });
 // save results to README.md
 Promise.all([p0, p1, p2]).then(function () {
