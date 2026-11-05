@@ -22,6 +22,7 @@ jobs:
       - name: Run compiled code
         run: node wakaapi.js
         env:
+          # OAuth access token from https://wakatime.com/oauth. Plugin API keys are write-only.
           API_KEY: ${{ secrets.WAKA_API_KEY }}
 
       - name: Commit and push changes
